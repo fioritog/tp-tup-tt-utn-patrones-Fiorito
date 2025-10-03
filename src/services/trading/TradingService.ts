@@ -5,8 +5,17 @@ import { Asset } from "../../models/AssetModel";
 import { User } from "../../models/UserModel";
 import { Portfolio } from "../../models/PortfolioModel";
 import { PortfolioHolding } from "../../models/PortfolioHolding";
-import { storage } from "../../utils/storage";
+import {
+  AssetStorage,
+  MarketDataStorage,
+  PortfolioStorage,
+  TransactionStorage,
+  UserStorage,
+} from "../../utils/storage";
 import { config } from "../../config/config";
+import { BuyFeeStrategy } from "./BuyAndSellStrategies";
+import { FeeStrategy } from "./Strategy";
+import { FeeFactory } from "./Factory";
 
 export class TradingService {
   // Ejecutar orden de compra al precio de mercado
@@ -16,13 +25,13 @@ export class TradingService {
     quantity: number
   ): Promise<Transaction> {
     // Obtener usuario
-    const user = storage.getUserById(userId);
+    const user = UserStorage.getUserById(userId);
     if (!user) {
       throw new Error("Usuario no encontrado");
     }
 
     // Obtener activo
-    const asset = storage.getAssetBySymbol(symbol);
+    const asset = AssetStorage.getAssetBySymbol(symbol);
     if (!asset) {
       throw new Error("Activo no encontrado");
     }
@@ -32,7 +41,10 @@ export class TradingService {
 
     // Calcular costo total incluyendo comisiones
     const grossAmount = quantity * executionPrice;
-    const fees = this.calculateFees(grossAmount, "buy");
+
+    //calcular fee usando los patrones
+    const buyStrategy: FeeStrategy = FeeFactory.getStrategy("buy");
+    const fees = buyStrategy.calculate(grossAmount);
     const totalCost = grossAmount + fees;
 
     // Verificar fondos suficientes
@@ -57,13 +69,13 @@ export class TradingService {
 
     // Actualizar balance del usuario
     user.deductBalance(totalCost);
-    storage.updateUser(user);
+    UserStorage.updateUser(user);
 
     // Actualizar portafolio
     this.updatePortfolioAfterBuy(userId, symbol, quantity, executionPrice);
 
     // Guardar transacción
-    storage.addTransaction(transaction);
+    TransactionStorage.addTransaction(transaction);
 
     // Simular volatilidad del mercado después de la operación
     this.simulateMarketImpact(symbol, quantity, "buy");
@@ -78,19 +90,19 @@ export class TradingService {
     quantity: number
   ): Promise<Transaction> {
     // Obtener usuario
-    const user = storage.getUserById(userId);
+    const user = UserStorage.getUserById(userId);
     if (!user) {
       throw new Error("Usuario no encontrado");
     }
 
     // Obtener activo
-    const asset = storage.getAssetBySymbol(symbol);
+    const asset = AssetStorage.getAssetBySymbol(symbol);
     if (!asset) {
       throw new Error("Activo no encontrado");
     }
 
     // Verificar holdings suficientes
-    const portfolio = storage.getPortfolioByUserId(userId);
+    const portfolio = PortfolioStorage.getPortfolioByUserId(userId);
     if (!portfolio) {
       throw new Error("Portafolio no encontrado");
     }
@@ -105,7 +117,10 @@ export class TradingService {
 
     // Calcular beneficio bruto y comisiones
     const grossAmount = quantity * executionPrice;
-    const fees = this.calculateFees(grossAmount, "sell");
+
+    //usando los patrones
+    const sellStrategy: FeeStrategy = FeeFactory.getStrategy("sell");
+    const fees = sellStrategy.calculate(grossAmount);
     const netAmount = grossAmount - fees;
 
     // Crear transacción
@@ -125,13 +140,13 @@ export class TradingService {
 
     // Actualizar balance del usuario
     user.addBalance(netAmount);
-    storage.updateUser(user);
+    UserStorage.updateUser(user);
 
     // Actualizar portafolio
     this.updatePortfolioAfterSell(userId, symbol, quantity, executionPrice);
 
     // Guardar transacción
-    storage.addTransaction(transaction);
+    TransactionStorage.addTransaction(transaction);
 
     // Simular volatilidad del mercado después de la operación
     this.simulateMarketImpact(symbol, quantity, "sell");
@@ -141,12 +156,9 @@ export class TradingService {
 
   // Cálculo de comisiones
   private calculateFees(amount: number, type: "buy" | "sell"): number {
-    const feePercentage =
-      type === "buy"
-        ? config.tradingFees.buyFeePercentage
-        : config.tradingFees.sellFeePercentage;
-    const calculatedFee = amount * feePercentage;
-    return Math.max(calculatedFee, config.tradingFees.minimumFee);
+    //strategy para calcular si se debe aplicar la fee de buy o de sell
+    const strategy = FeeFactory.getStrategy(type);
+    return strategy.calculate(amount);
   }
 
   // Actualizar portafolio después de compra
@@ -156,7 +168,7 @@ export class TradingService {
     quantity: number,
     price: number
   ): void {
-    const portfolio = storage.getPortfolioByUserId(userId);
+    const portfolio = PortfolioStorage.getPortfolioByUserId(userId);
     if (!portfolio) return;
 
     // Agregar las acciones al portafolio
@@ -165,7 +177,7 @@ export class TradingService {
     // Recalcular valores actuales
     this.recalculatePortfolioValues(portfolio);
 
-    storage.updatePortfolio(portfolio);
+    PortfolioStorage.updatePortfolio(portfolio);
   }
 
   // Actualizar portafolio después de venta
@@ -175,7 +187,7 @@ export class TradingService {
     quantity: number,
     price: number
   ): void {
-    const portfolio = storage.getPortfolioByUserId(userId);
+    const portfolio = PortfolioStorage.getPortfolioByUserId(userId);
     if (!portfolio) return;
 
     // Remover las acciones del portafolio
@@ -184,14 +196,14 @@ export class TradingService {
     // Recalcular valores actuales
     this.recalculatePortfolioValues(portfolio);
 
-    storage.updatePortfolio(portfolio);
+    PortfolioStorage.updatePortfolio(portfolio);
   }
 
   // Recalcular valores del portafolio
   private recalculatePortfolioValues(portfolio: Portfolio): void {
     // Actualizar el valor actual de cada holding
     portfolio.holdings.forEach((holding) => {
-      const asset = storage.getAssetBySymbol(holding.symbol);
+      const asset = AssetStorage.getAssetBySymbol(holding.symbol);
       if (asset) {
         holding.updateCurrentValue(asset.currentPrice);
       }
@@ -207,7 +219,7 @@ export class TradingService {
     quantity: number,
     action: "buy" | "sell"
   ): void {
-    const marketData = storage.getMarketDataBySymbol(symbol);
+    const marketData = MarketDataStorage.getMarketDataBySymbol(symbol);
     if (!marketData) return;
 
     // Calcular impacto basado en volumen
@@ -228,14 +240,14 @@ export class TradingService {
     marketData.timestamp = new Date();
 
     // Actualizar asset también
-    const asset = storage.getAssetBySymbol(symbol);
+    const asset = AssetStorage.getAssetBySymbol(symbol);
     if (asset) {
       asset.currentPrice = newPrice;
       asset.lastUpdated = new Date();
-      storage.updateAsset(asset);
+      AssetStorage.updateAsset(asset);
     }
 
-    storage.updateMarketData(marketData);
+    MarketDataStorage.updateMarketData(marketData);
   }
 
   // Generar ID único para transacciones
@@ -245,6 +257,6 @@ export class TradingService {
 
   // Obtener historial de transacciones
   getTransactionHistory(userId: string): Transaction[] {
-    return storage.getTransactionsByUserId(userId);
+    return TransactionStorage.getTransactionByUserId(userId);
   }
 }
