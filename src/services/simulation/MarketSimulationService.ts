@@ -1,11 +1,29 @@
 // Servicio de simulación de mercado
-import { MarketData, Asset } from "../models/types";
-import { storage } from "../utils/storage";
-import { config } from "../config/config";
+import { Asset } from "../../models/AssetModel";
+import { MarketData } from "../../models/MarketDataModel";
+import {
+  AssetStorage,
+  MarketDataStorage,
+  PortfolioStorage,
+  storage,
+  UserStorage,
+} from "../../utils/storage";
+import { config } from "../../config/config";
+import { IObserver } from "./Observer";
 
 export class MarketSimulationService {
   private isRunning: boolean = false;
   private intervalId: NodeJS.Timeout | null = null;
+  private observers: IObserver[] = [];
+
+  //Agregar observer
+  addObserver(observer: IObserver): void {
+    this.observers.push(observer);
+  }
+  //Notificar observer
+  private notifyObservers(marketData: MarketData[]): void {
+    this.observers.forEach((observer) => observer.update(marketData));
+  }
 
   // Iniciar simulación de mercado
   startMarketSimulation(): void {
@@ -39,7 +57,7 @@ export class MarketSimulationService {
 
   // Actualizar precios de mercado
   private updateMarketPrices(): void {
-    const allMarketData = storage.getAllMarketData();
+    const allMarketData = MarketDataStorage.getAllMarketData();
 
     allMarketData.forEach((marketData) => {
       // Generar cambio aleatorio de precio
@@ -58,36 +76,35 @@ export class MarketSimulationService {
       marketData.volume += Math.floor(Math.random() * 10000); // Simular volumen
       marketData.timestamp = new Date();
 
-      storage.updateMarketData(marketData);
+      MarketDataStorage.updateMarketData(marketData);
 
       // Actualizar asset correspondiente
-      const asset = storage.getAssetBySymbol(marketData.symbol);
+      const asset = AssetStorage.getAssetBySymbol(marketData.symbol);
       if (asset) {
         asset.currentPrice = newPrice;
         asset.lastUpdated = new Date();
-        storage.updateAsset(asset);
+        AssetStorage.updateAsset(asset);
       }
     });
 
-    // Actualizar valores de portafolios
-    this.updateAllPortfolioValues();
+    this.notifyObservers(allMarketData);
   }
-
+  /* esto está en PORTFOLIOOBSERVER 
   // Actualizar todos los portafolios
   private updateAllPortfolioValues(): void {
     // Obtener todos los usuarios y actualizar sus portafolios
     const allUsers = [
-      storage.getUserById("demo_user"),
-      storage.getUserById("admin_user"),
-      storage.getUserById("trader_user"),
+      UserStorage.getUserById("demo_user"),
+      UserStorage.getUserById("admin_user"),
+      UserStorage.getUserById("trader_user"),
     ].filter((user) => user !== undefined);
 
     allUsers.forEach((user) => {
       if (user) {
-        const portfolio = storage.getPortfolioByUserId(user.id);
+        const portfolio = PortfolioStorage.getPortfolioByUserId(user.id);
         if (portfolio && portfolio.holdings.length > 0) {
           this.recalculatePortfolioValues(portfolio);
-          storage.updatePortfolio(portfolio);
+          PortfolioStorage.updatePortfolio(portfolio);
         }
       }
     });
@@ -99,7 +116,7 @@ export class MarketSimulationService {
     let totalInvested = 0;
 
     portfolio.holdings.forEach((holding: any) => {
-      const asset = storage.getAssetBySymbol(holding.symbol);
+      const asset = AssetStorage.getAssetBySymbol(holding.symbol);
       if (asset) {
         holding.currentValue = holding.quantity * asset.currentPrice;
         const invested = holding.quantity * holding.averagePrice;
@@ -119,12 +136,12 @@ export class MarketSimulationService {
       totalInvested > 0 ? (portfolio.totalReturn / totalInvested) * 100 : 0;
     portfolio.lastUpdated = new Date();
   }
-
+*/
   // Simular evento de mercado específico
   simulateMarketEvent(eventType: "bull" | "bear" | "crash" | "recovery"): void {
     console.log(`Simulando evento de mercado: ${eventType}`);
 
-    const allMarketData = storage.getAllMarketData();
+    const allMarketData = MarketDataStorage.getAllMarketData();
 
     allMarketData.forEach((marketData) => {
       let impactFactor = 0;
@@ -165,8 +182,8 @@ export class MarketSimulationService {
       }
     });
 
-    // Actualizar portafolios
-    this.updateAllPortfolioValues();
+    // Actualizar portafolios:
+    //this.updateAllPortfolioValues();
   }
 
   // Obtener estado de simulación

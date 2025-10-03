@@ -1,16 +1,20 @@
 // Almacenamiento en memoria
-import {
-  User,
-  Asset,
-  Transaction,
-  Order,
-  Portfolio,
-  MarketData,
-} from "../models/types";
+import { User } from "../models/UserModel";
+import { Asset } from "../models/AssetModel";
+import { Transaction } from "../models/TransactionModel";
+import { Order } from "../models/OrderModel";
+import { Portfolio } from "../models/PortfolioModel";
+import { MarketData } from "../models/MarketDataModel";
 import { config } from "../config/config";
+import { UserFacade } from "./facades/Users";
+import { AssetFacade } from "./facades/Assets";
+import { TransactionFacade } from "./facades/Transaction";
+import { OrderFacade } from "./facades/Orders";
+import { PortfolioFacade } from "./facades/Portfolios";
+import { MarketDataFacade } from "./facades/MarketData";
 
 // Base de datos simulada en memoria (se pierde al reiniciar)
-class InMemoryStorage {
+export class InMemoryStorage {
   private users: Map<string, User> = new Map();
   private assets: Map<string, Asset> = new Map();
   private transactions: Transaction[] = [];
@@ -158,3 +162,11 @@ class InMemoryStorage {
 
 // Instancia global de almacenamiento
 export const storage = new InMemoryStorage();
+
+//Insatncia de las fachadas
+export const UserStorage = new UserFacade(storage);
+export const AssetStorage = new AssetFacade(storage);
+export const TransactionStorage = new TransactionFacade(storage);
+export const OrderStorage = new OrderFacade(storage);
+export const PortfolioStorage = new PortfolioFacade(storage);
+export const MarketDataStorage = new MarketDataFacade(storage);
